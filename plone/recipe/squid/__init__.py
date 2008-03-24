@@ -150,7 +150,7 @@ class ConfigureRecipe:
                 buildout["buildout"]["parts-directory"], self.name)
 
         # Set some default options
-        self.options["bind"]=self.options.get("bind", "127.0.0.1:3128")
+        self.options["bind"]=self.options.get("bind", "127.0.0.1:3128").lstrip(":")
         self.options["cache-size"]=self.options.get("cache-size", 1000)
         self.options["daemon"]=self.options.get("daemon", 
                 os.path.join(buildout["buildout"]["bin-directory"], "squid"))
@@ -167,10 +167,17 @@ class ConfigureRecipe:
             self.options["backends"]=self.options.get("backends", "127.0.0.1:8080")
             self.options["config"]=os.path.join(self.options["location"],"squid.conf")
 
-        # Convenience settings
-        (host,port)=self.options["bind"].split(":")
-        self.options["bind-host"]=host
-        self.options["bind-port"]=port
+        # Test for valid bind value
+        bind=self.options["bind"].split(":")
+        if len(bind)==1 and bind[0].isdigit():
+            self.options["bind-host"]=''
+            self.options["bind-port"]=bind[0]
+        elif len(bind)==2 and bind[1].isdigit():
+            self.options["bind-host"]=bind[0]
+            self.options["bind-port"]=bind[1]
+        else:
+            self.logger.error("Invalid syntax for bind")
+            raise zc.buildout.UserError("Invalid syntax for bind")
 
     def install(self):
         location=self.options["location"]
@@ -185,6 +192,7 @@ class ConfigureRecipe:
                 self.createSquidConfig()
             else:
                 self.createSquidConfigVHM()
+            #self.initializeSquid()
 
         return self.options.created()
 
@@ -194,21 +202,12 @@ class ConfigureRecipe:
 
 
     def addSquidRunners(self):
-        # build squid-initialize
-        target=os.path.join(self.buildout["buildout"]["bin-directory"],'squid-initialize')
-        f=open(target, "wt")
-        print >>f, "#!/bin/sh"
-        print >>f, 'exec %s -z \\' % self.options["daemon"]
-        print >>f, '  -f %s  \\' % self.options["config"]
-        print >>f, '  "$@"'
-        f.close()
-        os.chmod(target, 0755)
-        self.options.created(target)
-
         # build squid-start
         target1=os.path.join(self.buildout["buildout"]["bin-directory"],'squid-start')
         f=open(target1, "wt")
         print >>f, "#!/bin/sh"
+        print >>f, '%s -z \\' % self.options["daemon"]
+        print >>f, '  -f %s' % self.options["config"]
         print >>f, 'exec %s   \\' % self.options["daemon"]
         print >>f, '  -f %s \\' % self.options["config"]
         print >>f, '  "$@"'
@@ -227,24 +226,10 @@ class ConfigureRecipe:
         os.chmod(target2, 0755)
         self.options.created(target2)
 
-        # build squid-purge
-        target=os.path.join(self.buildout["buildout"]["bin-directory"],'squid-purge')
-        f=open(target, "wt")
-        print >>f, "#!/bin/sh"
-        print >>f, 'echo "Stopping squid..."'
-        print >>f, '%s' % target2
-        print >>f, 'sleep 10'
-        print >>f, 'echo "Clearing the cache..."'
-        print >>f, 'echo "" > %s' % os.path.join(self.options["location"],"cache","swap.state")
-        print >>f, 'echo "Starting squid..."'
-        print >>f, '%s' % target1
-        print >>f, 'echo "Done."'
-        print >>f, ""
-        print >>f, "# Note: Removal of swap.state to 'clear' the cache is not officially supported."
-        print >>f, "# For now it works but there is no guarantee this will be the case in the future."
-        f.close()
-        os.chmod(target, 0755)
-        self.options.created(target)
+
+    def initializeSquid(self):
+        self.logger.info("Creating Squid cache storage")
+        assert subprocess.call([self.options["daemon"], "-z", "-f " + self.options["config"]]) == 0
 
 
     def createSquidConfig(self):
@@ -274,6 +259,8 @@ class ConfigureRecipe:
         default_hostname = None
         for i in range(len(backends)):
             parts=backends[i]
+            
+            # no hostname or path, so we have only one backend
             if len(parts)==2:
                 if len(backends)==1:
                     if parts[0] not in zope_servers:
@@ -283,18 +270,37 @@ class ConfigureRecipe:
                 else:
                     self.logger.error("Invalid syntax for backend when multiple backends are defined: %s" % ":".join(parts))
                     raise zc.buildout.UserError("Invalid syntax for backends")
+            
+            # hostname and/or path is defined, so we may have multiple backends.
             elif len(parts)==3:
                 if parts[1] not in zope_servers:
                     zope_servers.append(parts[1])
+                
+                # define a cache peer
                 cache_peers+='cache_peer %s parent %s 0 no-query originserver login=PASS name=server_%s\n' % (parts[1], parts[2], i)
+                
+                # delegate to cache peer based on path
                 if parts[0].startswith('/'):
                     cache_peer_access+='acl path_%s urlpath_regex %s\n' % (i, parts[0])
-                    cache_peer_access+='cache_peer_access server_%s allow path_%s' % (i, i)
-                    cache_peer_access+='cache_peer_access server_%s deny all' % i
+                    cache_peer_access+='cache_peer_access server_%s allow path_%s\n' % (i, i)
+                    cache_peer_access+='cache_peer_access server_%s deny all\n\n' % i
+                
+                # delegate to cache peer based on hostname and path
+                elif parts[0].find('/') != -1:
+                    hostname, path = parts[0].split("/",1)
+                    if default_hostname is None:
+                        default_hostname=hostname
+                    cache_peer_access+='acl hostname_%s dstdomain %s\n' % (i, hostname)
+                    cache_peer_access+='acl path_%s urlpath_regex /%s\n' % (i, path)
+                    cache_peer_access+='cache_peer_access server_%s allow hostname_%s path_%s\n' % (i, i, i)
+                    cache_peer_access+='cache_peer_access server_%s deny all\n\n' % i
+                
+                # delegate to cache peer based on hostname
                 else:
                     if default_hostname is None:
                         default_hostname=parts[0]
-                    cache_peer_access+='cache_peer_domain server_%s %s' % (i, parts[0])
+                    cache_peer_access+='cache_peer_domain server_%s %s\n\n' % (i, parts[0])
+
             else:
                 self.logger.error("Invalid syntax for backend: %s" % ":".join(parts))
                 raise zc.buildout.UserError("Invalid syntax for backends")
@@ -329,6 +335,20 @@ class ConfigureRecipe:
             if group is not None:
                 usergroup += 'cache_effective_group %s\n' % group
 
+        # var directory for cache storage and pid file
+        base_dir = self.buildout['buildout']['directory']
+        var_dir = self.options.get('var', os.path.join(base_dir, 'var'))
+        if not os.path.exists(var_dir):
+            os.makedirs(var_dir)
+
+        # log directory
+        log_dir = os.path.join(var_dir, 'log')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        config["var_dir"]=var_dir
+        config["log_dir"]=log_dir
+        config["location"]=self.options["location"]
 
         config["zope_servers"]=' '.join(zope_servers)
         config["cache_peers"]=cache_peers
@@ -340,9 +360,7 @@ class ConfigureRecipe:
         config["bind"]=self.options.get("bind")
         config["bind_host"]=self.options.get("bind-host")
         config["bind_port"]=self.options.get("bind-port")
-        config["location"]=self.options["location"]
         config["cache_size"]=self.options["cache-size"]
-
 
         f=open(self.options["config"], "wt")
         f.write(template.safe_substitute(config))
@@ -380,6 +398,8 @@ class ConfigureRecipe:
         default_hostname = None
         for i in range(len(backends)):
             parts=backends[i]
+            
+            # no hostname, so we have only one backend
             if len(parts)==2:
                 if len(backends)==1:
                     if parts[0] not in zope_servers:
@@ -389,12 +409,14 @@ class ConfigureRecipe:
                 else:
                     self.logger.error("Invalid syntax for backend when multiple backends are defined: %s" % ":".join(parts))
                     raise zc.buildout.UserError("Invalid syntax for backends")
+            
+            # hostname defined, so we may have multiple backends.
             elif len(parts)==3:
                 if parts[1] not in zope_servers:
                     zope_servers.append(parts[1])
-                sitemap+="(10, '[\S]%s'): '%s:%s/VirtualHostBase/http/${HTTP_HOST}:80%s/VirtualHostRoot',\n" % (
-                           parts[0], parts[1], parts[2], zope2_vhm_map[parts[0]])
-                if parts[0].startswith('/'):
+                sitemap+="(%s, '[\S]*%s'): '%s:%s/VirtualHostBase/http/${HTTP_HOST}:80%s/VirtualHostRoot',\n" % (
+                           i+1, parts[0], parts[1], parts[2], zope2_vhm_map[parts[0]])
+                if parts[0].find('/') != -1:
                     self.logger.error("Path prefix not allowed in backends when using zope2_vhm_map: %s" % ":".join(parts))
                     raise zc.buildout.UserError("Invalid syntax for backends")
                 else:
@@ -434,6 +456,20 @@ class ConfigureRecipe:
             if group is not None:
                 usergroup += 'cache_effective_group %s\n' % group
 
+        # var directory for cache storage and pid file
+        base_dir = self.buildout['buildout']['directory']
+        var_dir = self.options.get('var', os.path.join(base_dir, 'var'))
+        if not os.path.exists(var_dir):
+            os.makedirs(var_dir)
+
+        # log directory
+        log_dir = os.path.join(var_dir, 'log')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        config["var_dir"]=var_dir
+        config["log_dir"]=log_dir
+        config["location"]=self.options["location"]
 
         config["zope_servers"]=' '.join(zope_servers)
         config["sitemap"]=sitemap
@@ -444,9 +480,7 @@ class ConfigureRecipe:
         config["bind"]=self.options.get("bind")
         config["bind_host"]=self.options.get("bind-host")
         config["bind_port"]=self.options.get("bind-port")
-        config["location"]=self.options["location"]
         config["cache_size"]=self.options["cache-size"]
-
 
         f=open(self.options["config"], "wt")
         f.write(template.safe_substitute(config))
@@ -460,6 +494,8 @@ class ConfigureRecipe:
             f = open(target, "wt")
             f.write(template.safe_substitute(config))
             f.close()
+            if fname == "iRedirector.py":
+                os.chmod(target, 0755)
             self.options.created(target)
 
 

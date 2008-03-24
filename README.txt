@@ -9,15 +9,15 @@ this recipe: it works with non-Zope sites just as well.
 
 Configuration is very simple. For example::
 
+    [squid-build]
+    recipe = plone.recipe.squid:build
+    url = http://www.squid-cache.org/Versions/v2/2.6/squid-2.6.STABLE18.tar.gz
+
     [squid-instance]
     recipe = plone.recipe.squid:instance
     bind = 127.0.0.1:3128
     backends = 127.0.0.1:8080
     cache-size = 1000
-
-    [squid-build]
-    recipe = plone.recipe.squid:build
-    url = http://www.squid-cache.org/Versions/v2/2.6/squid-2.6.STABLE18.tar.gz
 
 This configures two buildout parts: squid-build which will download,
 compile and install Squid and squid-instance which runs Squid, configured to
@@ -42,7 +42,7 @@ through the backends option::
 
 This will generate a configuration which sends all traffic for the plone.org
 host to a backend server running on port 8000 while all traffic for the
-plone.net host is send to port 9000.
+plone.net host is sent to port 9000.
 
 
 Zope 2 hosting (with Virtual Host Monster)
@@ -58,26 +58,24 @@ Option 1 (rewrites after Squid):
 
 If generating these VHM-style URLs in a proxy *behind* Squid (or if using
 VHM's 'mapping' feature), no extra Squid configuration is needed.  
-Just make sure the "backends" option sends the traffic to the proxy.
+Just make sure the "backends" option directs the traffic to the proxy.
 
 Option 2 (rewrites before Squid):
 
 If generating these VHM-style URLs in a proxy *in-front* of Squid, no extra
-Squid configuration is needed as long as the hostname is still retained in URL.
-If the hostname is not retained, you have the option to tell Squid to delegate
-based on the "path" instead of the hostname.  Just change the "backends" option 
-to recognize the path prefix of the VHM-style URL (beginning with '/').
-For example::
+Squid configuration is needed as long as the original hostname is still retained
+in the URL. If the hostname is not retained, you can tell Squid to direct requests
+based on the "path" instead of the hostname.  For example::
 
   [squid-instance]
   backends =
-    /VirtualHostBase/http/plone.org:80/:127.0.0.1:8000
+    /VirtualHostBase/http/plone.org:80/Plone:127.0.0.1:8000
+    /VirtualHostBase/http/plone.net:80/Plone:127.0.0.1:9000
 
-This will generate a configuration which sends all traffic for any request that
-starts with "/VirtualHostBase/http/plone.org:80/" to a backend server running 
-at 127.0.0.1 on port 8000.  Note: It's possible (although confusing) to have both 'host'
-and 'path' delegation within the same config but remember that the first one matching
-the request will "win".
+This will generate a configuration which sends all traffic for any request whose
+path starts with "/VirtualHostBase/http/plone.org:80/Plone" to a backend server
+running at 127.0.0.1 on port 8000, while request paths starting with 
+"/VirtualHostBase/http/plone.net:80/Plone" are sent to port 9000.
 
 Option 3 (rewrites within Squid):
 
@@ -143,6 +141,14 @@ visible-hostname
 visible-email
     The email address to show in squid-generated error pages.
 
+squid-directory
+    The location of a shared Squid installation directory.  Useful when
+    building multiple Squid instances.  A shared Squid build can be stored
+    separate from the buildout instance.  This directive must be defined in
+    ~/.buildout/default.cfg similar to the "zope-directory" and "eggs-directory"
+    directives.  The default is to build Squid in a subfolder of the buildout
+    'parts' directory.
+
 
 General Configuration Options:
 
@@ -156,8 +162,10 @@ cache-size
     space. Defaults to 1000 MB.
 
 bind
-    Hostname and port on which Squid will listen for requests. Defaults
-    to 127.0.0.1:3128.
+    Hostname and port on which Squid will listen for requests.
+    Syntax is [hostname][:port].  Defaults to 127.0.0.1:3128.
+    If hostname is omitted then Squid will bind to all available
+    interfaces.
 
 config
     Path for a Squid config file to use. If you use this option
@@ -165,11 +173,14 @@ config
 
 backends
     Specifies the backend or backends which will process the (uncached)
-    requests. There are two ways to specify backends: using
-    **hostname:backend server:backend port** or **backend server:backend
-    port**. Using the first option allows you to do virtual hosting. If
-    multiple backends are specified you have to use the full form including
-    the (virtual) hostname. Defaults to 127.0.0.1:8080.
+    requests. The syntax for backends:
+    
+    [<hostname>][/<path>]:<ip address>:<port>
+    
+    The optional 'hostname' and 'path' allows you to do virtual hosting.
+    If multiple backends are specified then each backend must include
+    either a hostname or path (or both) so that Squid can direct the
+    matching request to the appropriate backend. Defaults to 127.0.0.1:8080.
 
 zope_vhm_map
     Defines a virtual host mapping for Zope servers. This is a list of
