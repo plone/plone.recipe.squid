@@ -108,13 +108,9 @@ class BuildRecipe:
                 shutil.rmtree(tmp)
 
 
-
     def compileSquid(self):
         os.chdir(self.options["source-location"])
         self.logger.info("Compiling Squid")
-        
-        #if self.svn:
-        #    assert subprocess.call(["./autogen.sh"]) == 0
         
         assert subprocess.call(["./configure", "--prefix=" + self.options["binary-location"]]) == 0
         
@@ -186,13 +182,12 @@ class ConfigureRecipe:
             os.mkdir(location)
         self.options.created(location)
 
-        self.addSquidRunners()
+        self.addSquidRunner()
         if self.options["generate_config"]=="true":
             if self.options.get("zope2_vhm_map", None) is None:
                 self.createSquidConfig()
             else:
                 self.createSquidConfigVHM()
-            #self.initializeSquid()
 
         return self.options.created()
 
@@ -201,35 +196,24 @@ class ConfigureRecipe:
         pass
 
 
-    def addSquidRunners(self):
-        # build squid-start
-        target1=os.path.join(self.buildout["buildout"]["bin-directory"],'squid-start')
+    def addSquidRunner(self):
+        target=os.path.join(self.buildout["buildout"]["bin-directory"],
+                             self.name)
         f=open(target1, "wt")
         print >>f, "#!/bin/sh"
-        print >>f, '%s -z \\' % self.options["daemon"]
-        print >>f, '  -f %s' % self.options["config"]
-        print >>f, 'exec %s   \\' % self.options["daemon"]
-        print >>f, '  -f %s \\' % self.options["config"]
-        print >>f, '  "$@"'
+        print >>f, 'if [ $# -ge 0 ]; then'
+        print >>f, '  exec %s   \\' % self.options["daemon"]
+        print >>f, '    -f %s \\' % self.options["config"]
+        print >>f, '    "$@"'
+        print >>f, 'else'
+        print >>f, '  %s -z \\' % self.options["daemon"]
+        print >>f, '    -f %s' % self.options["config"]
+        print >>f, '  exec %s   \\' % self.options["daemon"]
+        print >>f, '    -f %s' % self.options["config"]
+        print >>f, 'fi'
         f.close()
-        os.chmod(target1, 0755)
-        self.options.created(target1)
-
-        # build squid-stop
-        target2=os.path.join(self.buildout["buildout"]["bin-directory"],'squid-stop')
-        f=open(target2, "wt")
-        print >>f, "#!/bin/sh"
-        print >>f, 'exec %s -k shutdown \\' % self.options["daemon"]
-        print >>f, '  -f %s \\' % self.options["config"]
-        print >>f, '  "$@"'
-        f.close()
-        os.chmod(target2, 0755)
-        self.options.created(target2)
-
-
-    def initializeSquid(self):
-        self.logger.info("Creating Squid cache storage")
-        assert subprocess.call([self.options["daemon"], "-z", "-f " + self.options["config"]]) == 0
+        os.chmod(target, 0755)
+        self.options.created(target)
 
 
     def createSquidConfig(self):
@@ -262,14 +246,10 @@ class ConfigureRecipe:
             
             # no hostname or path, so we have only one backend
             if len(parts)==2:
-                if len(backends)==1:
-                    if parts[0] not in zope_servers:
-                        zope_servers.append(parts[0])
-                    cache_peers+='cache_peer %s parent %s 0 no-query originserver login=PASS name=server_%s\n' % (parts[0], parts[1], i)
-                    cache_peer_access+='cache_peer_access server_%s allow all\n' % i
-                else:
-                    self.logger.error("Invalid syntax for backend when multiple backends are defined: %s" % ":".join(parts))
-                    raise zc.buildout.UserError("Invalid syntax for backends")
+                if parts[0] not in zope_servers:
+                    zope_servers.append(parts[0])
+                cache_peers+='cache_peer %s parent %s 0 no-query originserver login=PASS name=server_%s\n' % (parts[0], parts[1], i)
+                cache_peer_access+='cache_peer_access server_%s allow all\n' % i
             
             # hostname and/or path is defined, so we may have multiple backends.
             elif len(parts)==3:
