@@ -196,6 +196,14 @@ group
     The name of the group squid should switch to before accepting any
     request. This defaults to the main group for the specified user.
 
+
+Reporting bugs or asking questions
+----------------------------------
+
+A shared bugtracker and help desk is available on Launchpad:
+https://bugs.launchpad.net/collective.buildout/
+
+
 .. _Squid: http://squid-cache.org/
 .. _zc.buildout: http://cheeseshop.python.org/pypi/zc.buildout
 
