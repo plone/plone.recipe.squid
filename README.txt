@@ -52,6 +52,7 @@ If you are using Zope 2 as backend server you will need to rewrite the URL
 so the Zope Virtual Host Monster (VHM) can generate correct links for links in
 your pages. This can be done by another web proxy such as Apache or nginx
 (placed either in front or behind Squid) but can also be done by Squid itself.
+
 The three options are described below.
 
 Option 1 (rewrites after Squid):
@@ -169,7 +170,7 @@ bind
 
 config
     Path for a Squid config file to use. If you use this option
-    you can not use the backends or zope_vhm_map options.
+    you can not use the backends or zope2_vhm_map options.
 
 backends
     Specifies the backend or backends which will process the (uncached)
