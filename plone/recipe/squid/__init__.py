@@ -199,16 +199,16 @@ class ConfigureRecipe:
     def addSquidRunner(self):
         target=os.path.join(self.buildout["buildout"]["bin-directory"],
                              self.name)
-        f=open(target1, "wt")
+        f=open(target, "wt")
         print >>f, "#!/bin/sh"
-        print >>f, 'if [ $# -ge 0 ]; then'
+        print >>f, 'if [ $# -ge 1 ]; then'
         print >>f, '  exec %s   \\' % self.options["daemon"]
         print >>f, '    -f %s \\' % self.options["config"]
         print >>f, '    "$@"'
         print >>f, 'else'
         print >>f, '  %s -z \\' % self.options["daemon"]
         print >>f, '    -f %s' % self.options["config"]
-        print >>f, '  exec %s   \\' % self.options["daemon"]
+        print >>f, '  %s   \\' % self.options["daemon"]
         print >>f, '    -f %s' % self.options["config"]
         print >>f, 'fi'
         f.close()
