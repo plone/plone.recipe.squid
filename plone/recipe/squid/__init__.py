@@ -17,6 +17,8 @@ class BuildRecipe:
         self.options=options
         self.buildout=buildout
         self.logger=logging.getLogger(self.name)
+        self.logger.info("plone.recipe.squid:build is obsolete. "
+                         "Please use zc.recipe.cmmi instead.")
 
         self.svn=options.get("svn", None)
         self.url=options.get("url", None)

@@ -29,6 +29,7 @@ setup(name='plone.recipe.squid',
       ],
       entry_points={
           "zc.buildout" : [
+              "default = plone.recipe.squid:ConfigureRecipe",
               "build = plone.recipe.squid:BuildRecipe",
               "instance = plone.recipe.squid:ConfigureRecipe",
               ],
