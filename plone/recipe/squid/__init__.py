@@ -294,8 +294,8 @@ class ConfigureRecipe:
         # and put the wrong spelling in the previous version.
         if self.options.get("default_hostname", None) is not None:
             default_hostname = self.options.get("default_hostname")
-	    if self.options.get("default-hostname", None) is not None:
-	        default_hostname = self.options.get("default-hostname")        
+        if self.options.get("default-hostname", None) is not None:
+            default_hostname = self.options.get("default-hostname")        
         if default_hostname is None:
             default_hostname = 'example.com'
 
