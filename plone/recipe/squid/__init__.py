@@ -290,8 +290,12 @@ class ConfigureRecipe:
         # Allow buildout config to override the default hostname.
         # If we're still missing a default hostname, let's create a dummy one.
         # Not sure if this is necessary but it doesn't hurt.
+        # We support default_hostname and default-hostname since we screwed up
+        # and put the wrong spelling in the previous version.
         if self.options.get("default_hostname", None) is not None:
             default_hostname = self.options.get("default_hostname")
+	    if self.options.get("default-hostname", None) is not None:
+	        default_hostname = self.options.get("default-hostname")        
         if default_hostname is None:
             default_hostname = 'example.com'
 
